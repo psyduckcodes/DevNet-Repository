@@ -1,0 +1,131 @@
+
+import requests
+import urllib.parse
+
+# Initialize an empty dictionary for caching locations
+cached_locations = {}
+
+def geocoding(location, key):
+    # Check if the location is in the cache
+    if location in cached_locations:
+        print(f"Fetching {location} from cache...")
+        lat, lng, new_loc = cached_locations[location]
+        return 200, lat, lng, new_loc
+    
+    while location == "":
+        location = input("Enter the location again: ")
+        
+    geocode_url = "https://graphhopper.com/api/1/geocode?" 
+    url = geocode_url + urllib.parse.urlencode({"q": location, "limit": "1", "key": key})
+    
+    replydata = requests.get(url)
+    json_data = replydata.json()
+    json_status = replydata.status_code
+    
+    if json_status == 200 and len(json_data["hits"]) != 0:
+        lat = json_data["hits"][0]["point"]["lat"]
+        lng = json_data["hits"][0]["point"]["lng"]
+        name = json_data["hits"][0]["name"]
+        value = json_data["hits"][0]["osm_value"]
+        
+        if "country" in json_data["hits"][0]:
+            country = json_data["hits"][0]["country"]
+        else:
+            country = ""
+        
+        if "state" in json_data["hits"][0]:
+            state = json_data["hits"][0]["state"]
+        else:
+            state = ""
+        
+        if len(state) != 0 and len(country) != 0:
+            new_loc = f"{name} {state} {country}"
+        elif len(state) != 0:
+            new_loc = f"{name} {state}"
+        else:
+            new_loc = name
+        
+        print(f"Geocoding API URL for {new_loc} (Location Type: {value})\n{url}")
+        
+        # Cache the location
+        cached_locations[location] = (lat, lng, new_loc)
+        
+    else:
+        lat = "null"
+        lng = "null"
+        new_loc = location
+        if json_status != 200:
+            print(f"Geocode API status: {json_status}\nError message: {json_data['message']}")
+    
+    return json_status, lat, lng, new_loc
+
+def main():
+    route_url = "https://graphhopper.com/api/1/route?"
+    key = "c3bf27e9-3041-4327-b9c2-5483dac30501"  # Your actual API key
+    
+    while True:
+        print("\n+++++++++++++++++++++++++++++++++++++++++++++")
+        print("Vehicle profiles available on Graphhopper:")
+        print("+++++++++++++++++++++++++++++++++++++++++++++")
+        print("car bike foot motorcycle bus")
+        print("+++++++++++++++++++++++++++++++++++++++++++++")
+        
+        # Added new vehicle profiles
+        profile = ["car", "bike", "foot", "motorcycle", "bus"]
+        vehicle = input("Enter a vehicle profile from the list above: ")
+        if vehicle == "quit" or vehicle == "q":
+            break
+        elif vehicle in profile:
+            vehicle = vehicle
+        else:
+            vehicle = "car"
+            print("No valid vehicle profile was entered. Using the car profile.")
+        
+        loc1 = input("Starting Location: ")
+        if loc1 == "quit" or loc1 == "q":
+            break
+        orig = geocoding(loc1, key)
+        
+        loc2 = input("Destination: ")
+        if loc2 == "quit" or loc2 == "q":
+            break
+        dest = geocoding(loc2, key)
+        
+        print("=================================================")
+        if orig[0] == 200 and dest[0] == 200:
+            op = f"&point={orig[1]}%2C{orig[2]}"
+            dp = f"&point={dest[1]}%2C{dest[2]}"
+            paths_url = route_url + urllib.parse.urlencode({"key": key, "vehicle": vehicle}) + op + dp
+            paths_status = requests.get(paths_url).status_code
+            paths_data = requests.get(paths_url).json()
+            
+            print(f"Routing API Status: {paths_status}\nRouting API URL:\n{paths_url}")
+            
+            print("=================================================")
+            print(f"Directions from {orig[3]} to {dest[3]} by {vehicle}")
+            print("=================================================")
+            
+            if paths_status == 200:
+                miles = (paths_data["paths"][0]["distance"]) / 1000 / 1.61
+                km = (paths_data["paths"][0]["distance"]) / 1000
+                sec = int(paths_data["paths"][0]["time"] / 1000 % 60)
+                min = int(paths_data["paths"][0]["time"] / 1000 / 60 % 60)
+                hr = int(paths_data["paths"][0]["time"] / 1000 / 60 / 60)
+                
+                print(f"Distance Traveled: {miles:.1f} miles / {km:.1f} km")
+                print(f"Trip Duration: {hr:02d}:{min:02d}:{sec:02d}")
+                print("=================================================")
+                
+                for each in range(len(paths_data["paths"][0]["instructions"])):
+                    path = paths_data["paths"][0]["instructions"][each]["text"]
+                    distance = paths_data["paths"][0]["instructions"][each]["distance"]
+                    print(f"{path} ( {distance/1000:.1f} km / {distance/1000/1.61:.1f} miles )")
+                print("=================================================")
+            else:
+                print(f"Error message: {paths_data['message']}")
+                print("*************************************************")
+        else:
+            print("Failed to retrieve geocoding information. Please try again.")
+
+if __name__ == "__main__":
+    main()
